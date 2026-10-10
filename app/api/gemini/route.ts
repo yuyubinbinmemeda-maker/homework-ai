@@ -1,3 +1,4 @@
+// 强行修改 Vercel 免费版 10 秒断网限制，延长至满血 60 秒
 export const maxDuration = 60;
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -19,8 +20,6 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro-latest' });
-
     const mimeType = image.substring(image.indexOf(':') + 1, image.indexOf(';')) || 'image/jpeg';
     const base64Data = image.split(',')[1];
     
@@ -32,15 +31,49 @@ export async function POST(req: Request) {
 4. 【深度解析】：提供保姆级的详细推导和解析过程，帮助学生彻底理解知识点。
 请使用清晰美观的排版输出你的批改报告。`;
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: mimeType,
-        },
-      },
-    ]);
+    // 【一次性终极解决方案：全量模型自动轮询池】
+    const availableModels = [
+      'gemini-1.5-pro',
+      'gemini-1.5-pro-latest',
+      'gemini-1.5-pro-001',
+      'gemini-1.5-pro-002',
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-flash-001',
+      'gemini-1.5-flash-002',
+      'gemini-pro-vision'
+    ];
+
+    let result;
+    let finalError;
+
+    // 毫秒级全自动排雷：遇到 404 瞬间切下一个，直到找到您的账号白名单模型
+    for (const modelName of availableModels) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        result = await model.generateContent([
+          prompt,
+          { inlineData: { data: base64Data, mimeType: mimeType } },
+        ]);
+        
+        // 只要没报错，说明找对模型了，立刻跳出循环输出结果
+        console.log(`成功匹配到可用模型: ${modelName}`);
+        break; 
+      } catch (err: any) {
+        finalError = err;
+        // 如果是 404 找不到模型，直接忽略并测试下一个
+        if (err.message && (err.message.includes('404 Not Found') || err.message.includes('is not found'))) {
+          continue;
+        }
+        // 如果是其他真实错误（如密钥被停用），则直接抛出停止
+        throw err;
+      }
+    }
+
+    // 如果把底牌全打光了还是拿不到，抛出最后的报错
+    if (!result) {
+       throw finalError;
+    }
 
     const text = result.response.text();
     return NextResponse.json({ result: text });
