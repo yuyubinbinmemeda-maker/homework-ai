@@ -1,4 +1,4 @@
-// 【核心修复】：启用 Edge 边缘计算节点，彻底绕过 Vercel 免费版普通服务器的 10 秒强制超时死线
+// 【核心修复】：保留边缘节点，删除冲突的 maxDuration，确保构建通过
 export const runtime = 'edge';
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
