@@ -1,6 +1,3 @@
-// 【核心修复】：保留边缘节点，删除冲突的 maxDuration，确保构建通过
-export const runtime = 'edge';
-
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
