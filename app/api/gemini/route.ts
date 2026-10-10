@@ -1,3 +1,5 @@
+export const maxDuration = 60;
+
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
@@ -17,20 +19,18 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
-    // 【终极修复】加上 -latest 后缀，解决 404 找不到模型的问题
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
     const mimeType = image.substring(image.indexOf(':') + 1, image.indexOf(';')) || 'image/jpeg';
     const base64Data = image.split(',')[1];
     
-    // 【超级大脑】全科名师提示词
     const prompt = `你现在是一名精通全球知识题库的顶级全科辅导名师。
 请仔细观察这张作业照片：
-1. 准确识别出这是什么科目（如数学、语文、英语、物理等），绝对不能出错。
-2. 找出学生做错的题目，并指出错误原因。
-3. 依靠全球知识题库，给出绝对准确的标准答案。
-4. 提供保姆级的详细解析过程，帮助学生彻底理解。
-请用排版清晰、易于阅读的格式输出。`;
+1. 【学科判定】：首先准确识别出这是什么科目（如数学、语文、英语、物理等）。
+2. 【错题批改】：找出学生做错的题目，并指出具体错误原因。
+3. 【标准答案】：依靠全球知识题库，给出绝对准确的标准答案。
+4. 【深度解析】：提供保姆级的详细推导和解析过程，帮助学生彻底理解知识点。
+请使用清晰美观的排版输出你的批改报告。`;
 
     const result = await model.generateContent([
       prompt,
