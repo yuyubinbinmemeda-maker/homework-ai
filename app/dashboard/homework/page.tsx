@@ -1,181 +1,172 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
-import { Upload, CheckCircle, ArrowLeft, Loader2 } from 'lucide-react'
-
-interface Student {
-  id: string
-  name: string
-  grade: string
-}
+import { useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function HomeworkPage() {
-  const [students, setStudents] = useState<Student[]>([])
-  const [selectedStudent, setSelectedStudent] = useState('')
-  const [subject, setSubject] = useState('数学')
-  const [analyzing, setAnalyzing] = useState(false)
-  const [result, setResult] = useState<string | null>(null)
-  const [file, setFile] = useState<File | null>(null)
-  
-  const router = useRouter()
-  // 移除在 useEffect 依赖中的 supabase 实例化，避免警告
-  const supabase = createClient()
+  const router = useRouter();
+  const [image, setImage] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<string>('');
+  const [error, setError] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const fetchStudents = async () => {
-      const { data } = await supabase.from('students').select('id, name, grade')
-      if (data) setStudents(data)
-    }
-    fetchStudents()
-  }, []) // 保持空依赖数组
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileName(file.name);
+    setError('');
+
+    // 【核心修复】：前端 Canvas 暴力压缩，将几 MB 的照片压至几百 KB，彻底绕过 Vercel 的体积熔断拦截！
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200; // 保证题目清晰度的最大宽度
+        let scale = 1;
+        if (img.width > MAX_WIDTH) {
+          scale = MAX_WIDTH / img.width;
+        }
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // 压缩为 JPEG，画质 0.7 即可满足 AI 识别，体积骤降
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        setImage(compressedBase64);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSimulateAI = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selectedStudent) {
-      alert('请先选择对应的学员')
-      return
+    e.preventDefault();
+    if (!image) {
+      setError('请先上传作业照片');
+      return;
     }
-    setAnalyzing(true)
-    setResult(null)
+    setLoading(true);
+    setError('');
+    setResult('');
 
     try {
-      let base64Image = null;
-
-      if (file) {
-        base64Image = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = (error) => reject(error);
-        });
-      }
-
-      const prompt = `你是一个专业的 K12 作业批改老师，请帮我批改这位学员的作业图片。指出对错并给出详细的讲解。`;
-
-      const response = await fetch("/api/gemini", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ prompt, image: base64Image, subject }),
+      const res = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image }),
       });
 
-      const data = await response.json();
-      const text = data.result || data.candidates?.[0]?.content?.parts?.[0]?.text || "AI 未能返回有效内容，请重试。";
+      const responseText = await res.text();
+      let data;
+      
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        // 如果后端崩溃返回了 HTML（比如 504 超时），直接红字爆出
+        throw new Error(`服务器底层的真实拦截 (状态码 ${res.status}): ${responseText.substring(0, 150)}...`);
+      }
 
-      setResult(text);
-    } catch (error) {
-      setResult("调用 Gemini AI 失败，请重试。");
+      if (!res.ok) {
+        // 直接抛出后端的真实报错，绝不再用废话掩盖
+        throw new Error(data.error || `API 拒绝访问 (状态码: ${res.status})`);
+      }
+
+      setResult(data.result);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
-      setAnalyzing(false);
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <button 
-              onClick={() => router.push('/dashboard/students')}
-              className="flex items-center text-sm text-gray-600 hover:text-blue-600"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" /> 返回学员管理
-            </button>
-            <h1 className="text-xl font-bold text-gray-900">| AI 智能作业批改</h1>
-          </div>
-        </div>
-      </header>
+    <div className="max-w-4xl mx-auto px-4 py-8 bg-gray-50 min-h-screen">
+      <button
+        onClick={() => router.push('/dashboard/students')}
+        className="flex items-center text-sm text-gray-600 hover:text-gray-900 mb-6"
+      >
+        &larr; 返回学员管理
+      </button>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white shadow rounded-lg p-6 space-y-6">
-          <form onSubmit={handleSimulateAI} className="space-y-4">
+      <h1 className="text-2xl font-bold mb-8 text-gray-800">| AI 全科智能作业批改</h1>
+
+      <div className="bg-white shadow-md rounded-xl p-6 space-y-6 border border-gray-100">
+        <form onSubmit={handleSimulateAI} className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">选择学员</label>
-              <select
-                value={selectedStudent}
-                onChange={(e) => setSelectedStudent(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                required
-              >
-                <option value="">-- 请选择学员 --</option>
-                {students.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} ({s.grade})</option>
-                ))}
+              <label className="block text-sm font-medium text-gray-700 mb-2">选择学员</label>
+              <select className="w-full border border-gray-300 rounded-md p-2.5 focus:ring-blue-500 focus:border-blue-500">
+                <option>余文清 (小学)</option>
               </select>
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700">科目</label>
-              <select
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="数学">数学</option>
-                <option value="语文">语文</option>
-                <option value="英语">英语</option>
-                <option value="物理">物理</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">上传作业照片</label>
-              <label htmlFor="file-upload" className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-blue-400 cursor-pointer block">
-                <div className="space-y-1 text-center">
-                  <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                  <div className="text-sm text-gray-600">
-                    {file ? (
-                      <span className="font-medium text-blue-600">已选择: {file.name} (可点击重新更换)</span>
-                    ) : (
-                      <><span className="font-medium text-blue-600 hover:text-blue-500">点击上传作业图片</span> 或拖拽图片到这里</>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500">支持 PNG, JPG, JPEG 格式</p>
-                </div>
-                <input 
-                  id="file-upload" 
-                  type="file" 
-                  className="hidden" 
-                  accept="image/*" 
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files[0]) {
-                      setFile(e.target.files[0]);
-                    }
-                  }} 
-                />
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              disabled={analyzing}
-              className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 disabled:opacity-50 font-medium"
-            >
-              {analyzing ? (
-                <>
-                  <Loader2 className="animate-spin w-5 h-5 mr-2" /> AI 正在深度批改中...
-                </>
-              ) : (
-                '开始 AI 智能批改'
-              )}
-            </button>
-          </form>
-
-          {result && (
-            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md space-y-2">
-              <div className="flex items-center text-blue-800 font-bold">
-                <CheckCircle className="w-5 h-5 mr-2" /> 批改完成
+              <label className="block text-sm font-medium text-gray-700 mb-2">智能科目识别</label>
+              <div className="w-full border border-gray-200 bg-gray-50 rounded-md p-2.5 text-gray-500">
+                AI 将自动识别图中的学科
               </div>
-              <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans bg-white p-4 rounded border border-gray-200">
-                {result}
-              </pre>
             </div>
-          )}
-        </div>
-      </main>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">上传作业照片 (自动防超载压缩)</label>
+            <div 
+              className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:bg-blue-50 hover:border-blue-400 cursor-pointer transition-all"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={handleImageUpload} 
+                className="hidden" 
+                ref={fileInputRef}
+              />
+              <div className="text-4xl text-gray-400 mb-3">📸</div>
+              {fileName ? (
+                <p className="text-blue-600 font-medium">已准备就绪: {fileName}</p>
+              ) : (
+                <p className="text-gray-600 font-medium">点击此处上传手机拍的作业照片</p>
+              )}
+              <p className="text-xs text-gray-400 mt-2">支持高清图片，系统将在本地自动极速压缩</p>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading || !image}
+            className={`w-full py-3.5 rounded-lg text-white font-bold text-lg transition-all shadow-md ${
+              loading || !image ? 'bg-blue-300 cursor-not-allowed shadow-none' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg'
+            }`}
+          >
+            {loading ? 'AI 正在连接全球题库，请稍候...' : '开始 AI 智能批改'}
+          </button>
+        </form>
+
+        {error && (
+          <div className="mt-6 p-5 bg-red-50 border-l-4 border-red-500 rounded-r-lg shadow-sm">
+            <div className="flex items-center text-red-700 font-bold mb-2">
+              <span className="text-lg mr-2">❌ 侦测到致命错误：</span>
+            </div>
+            <pre className="text-sm text-red-800 whitespace-pre-wrap font-mono bg-red-100 p-3 rounded">{error}</pre>
+            <p className="text-sm text-red-600 mt-3 font-medium">👉 如果您看到了这个红框，请直接截图发给技术人员，真相已经大白了！</p>
+          </div>
+        )}
+
+        {result && (
+          <div className="mt-8 p-6 bg-green-50 border border-green-200 rounded-xl shadow-sm">
+            <div className="flex items-center text-green-700 font-bold text-lg mb-4 border-b border-green-200 pb-2">
+              <span className="mr-2">✨ 批改与解析完成</span>
+            </div>
+            <div className="bg-white p-6 rounded-lg border border-gray-100 whitespace-pre-wrap text-gray-800 leading-relaxed text-base shadow-inner font-serif">
+              {result}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  )
+  );
 }
