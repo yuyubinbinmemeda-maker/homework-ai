@@ -2,13 +2,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
 // 1. 初始化标准的 Gemini API 客户端
-// 确保在 .env.local 中配置了 GOOGLE_API_KEY
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || "");
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    // 兼容前端传过来的参数
     const { prompt, image, subject } = body;
     const currentSubject = subject || "自动识别";
 
@@ -38,14 +36,11 @@ export async function POST(request: Request) {
 
 用户附加要求：${prompt || "请对该试卷图片进行全盘真实读图、一题不漏的逐题多模态精细批改与详解。"}`;
 
-    // 4. 构造发送给 AI 的数据包
-    const parts: any[] = [systemPrompt];
+    // 4. 构造发送给 AI 的数据包const parts: any[] = [systemPrompt];
 
-    // 处理前端传来的图片，提取纯 Base64 字符串并塞入请求中
+    // 处理前端传来的图片
     if (image) {
-      // 兼容直接传纯 base64 或带 data:image/jpeg;base64, 前缀的情况
       const base64Data = typeof image === 'string' && image.includes(',') ? image.split(',')[1] : image;
-      // 如果您的前端传的是 { inlineData: { data: ... } } 这种结构，请按需修改取值方式
       const actualBase64 = base64Data?.inlineData?.data || base64Data; 
 
       if (actualBase64) {
@@ -53,4 +48,19 @@ export async function POST(request: Request) {
           inlineData: {
             data: actualBase64,
             mimeType: "image/jpeg",
-          
+          }
+        });
+      } }
+
+    // 5. 调用大模型并等待结果 (补全了您丢失的这部分核心逻辑！)
+    const result = await model.generateContent(parts);
+    const responseText = result.response.text();
+
+    // 6. 将结果返回给前端，统一格式为 result
+    return NextResponse.json({ result: responseText });
+
+  } catch (error: any) {
+    console.error("AI 批改后端报错:", error);
+    return NextResponse.json({ error: error.message || "内部服务器错误" }, { status: 500 });
+  }
+}
