@@ -43,41 +43,31 @@ setResult(null)
 try {
   let base64Image = null;
 
-  // 如果用户上传了图片，先将图片转为 Base64 格式
   if (file) {
     base64Image = await new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result);
+      reader.onload = () => resolve(reader.result as string);
       reader.onerror = (error) => reject(error);
     });
   }
 
-  // 组装你的批改提示词
   const prompt = `你是一个专业的 K12 作业批改老师，请帮我批改这位学员的作业图片。指出对错并给出详细的讲解。`;
 
-  // 请求我们自己的后端接口，并把图片传过去
   const response = await fetch("/api/gemini", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ prompt, image: base64Image }),
+    body: JSON.stringify({ prompt, image: base64Image, subject }),
   });
 
   const data = await response.json();
-  
-  // 【关键修改点】：适配新后端的返回格式，并增加错误拦截
-  if (data.error) {
-     setResult(`后端报错: ${data.error}`);
-     return;
-  }
-  
-  const text = data.result || "AI 未能返回有效内容，请重试。";
+  const text = data.result || data.candidates?.[0]?.content?.parts?.[0]?.text || "AI 未能返回有效内容，请重试。";
 
   setResult(text);
-} catch (error: any) {
-  setResult(`网络请求失败: ${error.message}`);
+} catch (error) {
+  setResult("调用 Gemini AI 失败，请重试。");
 } finally {
   setAnalyzing(false);
 }
@@ -189,8 +179,7 @@ className="flex items-center text-sm text-gray-600 hover:text-blue-600"
     </div>
   </main>
 </div>
-
-
 )
 }
-        
+
+
