@@ -20,6 +20,9 @@ export async function POST(req: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     
+    // 【核心修复】：严格按照官方报错的明确要求，使用 gemini-3.8-flash
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
+
     const mimeType = image.substring(image.indexOf(':') + 1, image.indexOf(';')) || 'image/jpeg';
     const base64Data = image.split(',')[1];
     
@@ -31,39 +34,15 @@ export async function POST(req: Request) {
 4. 【深度解析】：提供保姆级的详细推导和解析过程，帮助学生彻底理解知识点。
 请使用清晰美观的排版输出你的批改报告。`;
 
-    // 【真相大白：仅轮询当前真正存活的最新代际模型】
-    const availableModels = [
-      'gemini-3.0-pro',
-      'gemini-3.0-flash',
-      'gemini-2.5-pro',
-      'gemini-2.5-flash'
-    ];
-
-    let result;
-    let finalError;
-
-    for (const modelName of availableModels) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName });
-        result = await model.generateContent([
-          prompt,
-          { inlineData: { data: base64Data, mimeType: mimeType } },
-        ]);
-        
-        console.log(`成功匹配到可用模型: ${modelName}`);
-        break; 
-      } catch (err: any) {
-        finalError = err;
-        if (err.message && (err.message.includes('404 Not Found') || err.message.includes('is not found'))) {
-          continue;
-        }
-        throw err;
-      }
-    }
-
-    if (!result) {
-       throw finalError;
-    }
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: base64Data,
+          mimeType: mimeType,
+        },
+      },
+    ]);
 
     const text = result.response.text();
     return NextResponse.json({ result: text });
