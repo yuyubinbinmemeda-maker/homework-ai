@@ -1,4 +1,5 @@
-export const maxDuration = 60;
+// 【核心修复】：启用 Edge 边缘计算节点，彻底绕过 Vercel 免费版普通服务器的 10 秒强制超时死线
+export const runtime = 'edge';
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
@@ -25,7 +26,6 @@ export async function POST(req: Request) {
     const mimeType = image.substring(image.indexOf(':') + 1, image.indexOf(';')) || 'image/jpeg';
     const base64Data = image.split(',')[1];
 
-    // 【核心修改】：给 AI 下达死命令，强制使用普通文本符号，彻底消灭 LaTeX "乱码"
     const prompt = `你现在是一名精通全球知识题库的顶级全科辅导名师。
 请仔细观察这张作业照片：
 1. 【学科判定】：首先准确识别出这是什么科目（如数学、语文、英语、物理等）。
